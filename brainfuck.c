@@ -2,102 +2,94 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define MAX_MEMORY 16
+#define MAX_MEMORY 30000
 
-int MEMORY[MAX_MEMORY];
-int ptr = 0;
-
-bool skip_block = false;
-
-int CALL_STACK[MAX_MEMORY];
-int stack_ptr = -1;
-
-int* LOOP_MEMORY[MAX_MEMORY];
-int loop_ptr = 0;
-
-char BRACE_STACK[MAX_MEMORY];
-int brace_ptr = -1;
-
-void print_memory() {
-  for(int i = 0; i < MAX_MEMORY; i++) {
-    printf("%d, ", MEMORY[i]);
-  }
-
-  printf("\n");
-}
-
-void add_loop_index(int idx){
-  LOOP_MEMORY[loop_ptr] = &MEMORY[ptr];
-
-  if(*LOOP_MEMORY[loop_ptr++] != 0) {
-    CALL_STACK[++stack_ptr] = idx;
-  } else {
-    skip_block = true;
-  }
-}
+unsigned int memory[MAX_MEMORY];
+unsigned int* ptr = memory;
 
 void increment_ptr() {
-  if(ptr == MAX_MEMORY - 1) ptr = 0;
-  else ptr++;
+  if(ptr == &memory[MAX_MEMORY - 1]) {
+    ptr = memory;
+  } else {
+    ++ptr;
+  }
 }
 
 void decrement_ptr() {
-  if(ptr == 0) ptr = MAX_MEMORY - 1;
-  else ptr--;
+  if(ptr == memory) {
+    ptr = &memory[MAX_MEMORY - 1];
+  } else {
+    --ptr;
+  }
+}
+
+void handle_forward_jump(int* i, char** contents) {
+  int loop = 1;
+  (*i)++;
+  
+  while(loop > 0) {
+    (*i)++;
+    if((*contents)[*i] == '[') loop++;
+    if((*contents)[*i] == ']') loop--;
+  }
+}
+
+void handle_backward_jump(int* i, char** contents) {
+  int loop = 1;
+  (*i)--;
+  
+  while(loop > 0) {
+    if((*contents)[*i] == ']') loop++;
+    if((*contents)[*i] == '[') loop--;
+    (*i)--;
+  }
+}
+
+void handle_instruction(int* i, char** contents) {
+  switch((*contents)[*i]) {
+    case '+':
+      (*ptr)++;
+      break;
+    case '-':
+      (*ptr)--;
+      break;
+    case '.':
+      putchar(*ptr);
+      break;
+    case '>':
+      increment_ptr();
+      break;
+    case '<':
+      decrement_ptr();
+      break;
+    case ',':
+      *ptr = getchar();
+      break;
+    case '[':
+      if(*ptr == 0) {
+	handle_forward_jump(i, contents);
+      }
+      break;
+    case ']':
+      handle_backward_jump(i, contents);
+      break;
+    default:
+      // The default case should never be invoked
+      break;	 
+  }
 }
 
 void interpret_block(char* contents) {
   for(int i = 0; contents[i] != '\0'; i++){
-    
-    if(!skip_block) {
-      // printf("%d | %c\n", i, contents[i]);
-      switch(contents[i]){
-        case '+':
-	  MEMORY[ptr]++;
-	  break;
-        case '-':
-	  MEMORY[ptr]--;
-	  break;
-        case '.':
-	  putchar(MEMORY[ptr]);
-	  break;
-        case '>':
-	  increment_ptr();
-	  break;
-        case '<':
-	  decrement_ptr();
-	  break;
-        case ',':
-	  MEMORY[ptr] = getchar();
-	  break;
-        case '[':
-	  add_loop_index(i); 
-	  break;
-        case ']':
-	  i = CALL_STACK[stack_ptr--] - 1;
- 	  loop_ptr--;
-	  break;
-        default:
-	  continue;
-	  break;	 
-      }
-    }
-
-    if(skip_block && contents[i] == '[') {
-      BRACE_STACK[++brace_ptr] = '[';
-    }
-
-    if(skip_block && contents[i] == ']') {
-      BRACE_STACK[brace_ptr--] = '\0';
-      
-      if(brace_ptr < 0) { 
-	skip_block = false;
-      }
-    }
-
+    handle_instruction(&i, &contents);
   }
 
   printf("\n");
+}
+
+bool is_instruction(int ch) {
+  // Ascii Values for Brainfuck Instructions
+  return (ch >= 43 && ch <= 46) || ch == 60 || ch == 62 || ch == 91 || ch == 93;
 }
 
 char* get_code(char* buffer, FILE* file) {
@@ -105,12 +97,8 @@ char* get_code(char* buffer, FILE* file) {
   size_t n = 0;
 
   while((c = fgetc(file)) != EOF) {
-    char ch = (char) c;
-
-    if(ch == '+' || ch == '-' || ch == '>' ||
-       ch == '<' || ch == '.' || ch == ',' ||
-       ch == '[' || ch == ']') {
-      buffer[n++] = ch;
+    if(is_instruction(c)) {
+      buffer[n++] = (char) c;
     }  
   }
 
@@ -136,13 +124,17 @@ void interpret(const char* file_path) {
   long file_size = get_file_size(file);
 
   code = get_code(malloc(file_size), file);
-  interpret_block(code);
-  
   fclose(file);
+  
+  interpret_block(code);
 }
 
 int main(int argc, char** argv) {
+  if(argc > 2) {
+    printf("Error: Too many program arguments\n");
+    return -1;
+  }
+  
   interpret(argv[1]);
-  print_memory();
   return 0;
 }
